@@ -1,4 +1,4 @@
-# holodori-profile-export
+# holodori exporter
 Export your **hololive Dreams** game account into a portable **`.hdbest` profile** you can import on
 [holodori.best](https://holodori.best) as a profile, and (optionally) **HoshiDori** inventory and
 holoboard files for HoshiDori.
