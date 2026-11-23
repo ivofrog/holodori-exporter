@@ -16,13 +16,13 @@ jobs:
         include:
           - os: windows-latest
             suffix: windows
-            pkg: --onefile --windows-console-mode=attach --enable-plugin=upx --onefile-no-compression
+            pkg: --onefile --windows-console-mode=attach --enable-plugin=upx --onefile-no-compression --windows-icon-from-ico=holodori_profile_export/assets/favicon.ico
           - os: ubuntu-latest
             suffix: linux
-            pkg: --onefile --enable-plugin=upx --onefile-no-compression
+            pkg: --onefile --enable-plugin=upx --onefile-no-compression --linux-icon=holodori_profile_export/assets/icon.png
           - os: macos-latest
             suffix: macos
-            pkg: --standalone --macos-create-app-bundle --macos-app-name=holodori-profile-export
+            pkg: --standalone --macos-create-app-bundle --macos-app-name="holodori exporter" --macos-app-icon=holodori_profile_export/assets/icon.icns
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +50,29 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y upx-ucl
 
+      - name: Make app icons
+        shell: bash
+        run: |
+          # The artwork is kept as icon.webp to keep the repo small; build the formats each OS needs.
+          python - <<'PY'
+          from PIL import Image
+          d = "holodori_profile_export/assets/"
+          im = Image.open(d + "icon.webp").convert("RGBA")
+          im.save(d + "icon.png")
+          im.save(d + "favicon.ico", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+          PY
+
+      - name: Make app icon (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set=$RUNNER_TEMP/icon.iconset; mkdir -p "$set"
+          for s in 16 32 128 256 512; do
+            sips -z $s $s holodori_profile_export/assets/icon.png --out "$set/icon_${s}x${s}.png" >/dev/null
+            sips -z $((s*2)) $((s*2)) holodori_profile_export/assets/icon.png --out "$set/icon_${s}x${s}@2x.png" >/dev/null
+          done
+          iconutil -c icns "$set" -o holodori_profile_export/assets/icon.icns
+
       - name: Build (Nuitka)
         run: >
           python -m nuitka
@@ -66,7 +89,7 @@ jobs:
           --include-package-data=curl_cffi
           --include-package-data=customtkinter
           --company-name=HolodoriDB
-          --product-name=holodori-profile-export
+          --product-name="holodori exporter"
           --file-version=${{ steps.ver.outputs.version }}
           --product-version=${{ steps.ver.outputs.version }}
           main.py
@@ -76,11 +99,37 @@ jobs:
         shell: bash
         run: |
           app=$(ls -d dist/*.app | head -n1)
-          target=dist/holodori-profile-export-macos.app
+          target="dist/holodori exporter.app"   # the name Finder shows
           [ "$app" = "$target" ] || mv "$app" "$target"
+          # A .app is a folder; zip it with ditto so it keeps its permissions and still opens after download
+          ditto -c -k --keepParent "$target" dist/holodori-profile-export-macos.zip
+          rm -rf "$target"
 
       - uses: actions/upload-artifact@v4
         with:
           name: holodori-profile-export-${{ matrix.os }}
           path: dist/holodori-profile-export*
           if-no-files-found: error
+
+  # Pushing a tag like v1.1.0 publishes the three builds as a GitHub release anyone can download.
+  # always(): still publish the builds that succeeded if one OS had no runner (macOS can queue out).
+  release:
+    if: always() && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # the release may already exist if it was made on github.com; then just add the files
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes \
+          || gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
