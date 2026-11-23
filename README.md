@@ -13,10 +13,10 @@ The profile file is an unencrypted gzipped json file.
 ## Usage (Release)
 Download the file for your system from the [latest release](../../releases/latest) and run it.
 
-- **Windows:** `holodori-profile-export-windows.exe`.
-- **macOS (Apple silicon):** unzip `holodori-profile-export-macos.zip`. The app isn't signed by Apple, so the
+- **Windows:** `holodori-exporter-windows.exe`.
+- **macOS (Apple silicon):** unzip `holodori-exporter-macos.zip`. The app isn't signed by Apple, so the
   first time, right-click it → **Open** → **Open** (or run `xattr -dr com.apple.quarantine "holodori exporter.app"`).
-- **Linux:** `chmod +x holodori-profile-export-linux` once, then run it.
+- **Linux:** `chmod +x holodori-exporter-linux` once, then run it.
 
 ## Usage (Python)
 Download the repository as a zip, then unzip it. Python 3.10+ is required (and should be in path).
