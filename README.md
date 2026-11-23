@@ -106,3 +106,15 @@ Basic knowledge on how to intercept network requests (or use a proxy) is require
 > It is unknown how much longer this will work though, as Unity has released a fix in newer Unity versions that no longer trusts the leaked certificates from eMudhra, and emails were sent to all Unity developers.
 
 *Easy for non-Android devices. Requires a rooted Android device if used on Android.
+
+## Changelog
+
+### 1.1.1 (bug fix)
+- **Fixed:** cards below their level cap were exported with the wrong level (often their max level) and a
+  "couldn't be read exactly" warning. Levels are now worked out exactly from card EXP for every card.
+
+### 1.1.0
+- HoshiDori export: inventory (cards with bloom and level, holomem ranks, cubes/hexas) and a holoboards file.
+- "Import current settings" keeps your HoshiDori custom cards and presets.
+- Card list and holoboard node costs built in, so no extra web requests.
+- Redesigned app.
