@@ -3,3 +3,5 @@ typer
 rich
 customtkinter
 holodori-asset-tools>=1.1.1
+pillow
+pyobjc-framework-Cocoa; sys_platform == "darwin"

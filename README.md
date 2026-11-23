@@ -1,11 +1,22 @@
 # holodori-profile-export
 Export your **hololive Dreams** game account into a portable **`.hdbest` profile** you can import on
-[holodori.best](https://holodori.best) as a profile.
+[holodori.best](https://holodori.best) as a profile, and (optionally) **HoshiDori** inventory and
+holoboard files for HoshiDori.
+
+This is a fork of [HolodoriDB/holodori-profile-export](https://github.com/HolodoriDB/holodori-profile-export)
+that adds the HoshiDori export and a redesigned app.
+
+> Last updated: v1.2.101 hololive Dreams · v5.8.0 holodori.best · v1.32.5 HoshiDori
 
 The profile file is an unencrypted gzipped json file.
 
 ## Usage (Release)
-Download the [latest release](https://github.com/HolodoriDB/holodori-profile-export/releases/latest) and run the file.
+Download the file for your system from the [latest release](../../releases/latest) and run it.
+
+- **Windows:** `holodori-profile-export-windows.exe`.
+- **macOS (Apple silicon):** unzip `holodori-profile-export-macos.zip`. The app isn't signed by Apple, so the
+  first time, right-click it → **Open** → **Open** (or run `xattr -dr com.apple.quarantine "holodori exporter.app"`).
+- **Linux:** `chmod +x holodori-profile-export-linux` once, then run it.
 
 ## Usage (Python)
 Download the repository as a zip, then unzip it. Python 3.10+ is required (and should be in path).
@@ -17,6 +28,38 @@ python main.py --source <source> # run with CLI
 ```
 
 It will create a `<user id>.hdbest` file. Upload that on holodori.best to import your account data (My Game Data -> Profiles -> click "Update" on a profile).
+
+## HoshiDori inventory file (`--hoshidori`)
+Also writes `<user id>.hoshidori.json` (for HoshiDori **Inventory → Import JSON**) and `<user id>.hoshidori-holoboards.json` (for **Holoboard → ⋯ → Import JSON**).
+In the window app, use the **Export for** switches (holodori.best and HoshiDori, both on by default). Each file is always complete.
+
+```bash
+python main.py --source steam --hoshidori
+python main.py --source steam --hoshidori --hoshidori-base my-hoshidori-export.json   # keep your HoshiDori settings
+python main.py --source steam --hoshidori --no-hdbest                                 # only the HoshiDori file
+```
+
+| HoshiDori field | where it comes from |
+| --- | --- |
+| cards (owned, bloom, level) | your game account. Level is worked out exactly from card EXP (the game's EXP-per-level table is built in) and capped by limit breaks. |
+| characterRanks | the game's own profile data (`Profile/GetUserProfileDetail`). |
+| resources (cubes & hexas) | what your boards have spent (node costs built into the exporter) **plus** what you hold in the game right now. |
+| holoboards | a second file, `<user id>.hoshidori-holoboards.json`, for HoshiDori → Holoboard → profile menu (⋯) → **Import JSON**. HoshiDori adds it as a new Holoboard profile; existing ones are never overwritten. |
+| preset / defaults | copied from `--hoshidori-base` if given; otherwise left out, so HoshiDori keeps the selected profile's own (its Import JSON only replaces sections the file contains). |
+| custom cards | kept exactly (owned, bloom, level) from `--hoshidori-base`. Without a base file HoshiDori still keeps them, but resets them to its preset defaults (e.g. owned, B1, max level). |
+
+HoshiDori's Import JSON rejects a whole file if it names a card or holomem it doesn't know. So:
+
+- With `--hoshidori-base`, cards and holomems that aren't in that file (new ones HoshiDori hasn't added yet) are left out and listed as a warning.
+- If you delete a custom card in HoshiDori after exporting your settings, export them again before running this; otherwise HoshiDori won't import the file.
+
+Not available with `--source mitm`. Your login is only ever sent to the game servers. The card list
+and holoboard node costs are built into the exporter (`gamedata.py`), so it makes no other requests.
+Every holomem's board uses the same node costs, so new holomems are covered; if a game update adds
+new nodes or cards, the done screen says so.
+
+> [!NOTE]
+> Every source except `mitm` signs in to the game servers, which signs the game out wherever it is open. Close the game first and reopen it afterwards.
 
 ## Sources (`--source`)
 
