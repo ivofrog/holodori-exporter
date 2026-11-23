@@ -33,11 +33,14 @@ def read_credential() -> str:
 
 
 def run(
-    client: GameClient, out_dir: str, echo: Callable[[str], None] = print
-) -> tuple[dict, Path]:
+    client: GameClient,
+    out_dir: str,
+    echo: Callable[[str], None] = print,
+    hdbest: bool = True,
+) -> tuple[dict, Path | None]:
     cred = read_credential()
     echo(text.STATUS_STEAM_LOGIN)
     ud = client.user_get(client.auth_login(cred))
     obj = profile.build(ud)
-    dest = profile.write(obj, out_dir)
+    dest = profile.write(obj, out_dir) if hdbest else None  # off when only the HoshiDori file is wanted
     return obj, dest

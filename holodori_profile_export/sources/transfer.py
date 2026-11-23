@@ -13,7 +13,8 @@ def run(
     password: str,
     out_dir: str,
     echo: Callable[[str], None] = print,
-) -> tuple[dict, Path]:
+    hdbest: bool = True,
+) -> tuple[dict, Path | None]:
     echo(text.STATUS_TRANSFER_VALIDATE)
     info = client.migration_prepare_password(migration_id, password)
     if not info.get("public_user_id") or not info.get("one_time_token"):
@@ -30,5 +31,5 @@ def run(
     )
     ud = client.user_get(client.auth_login(credential))
     obj = profile.build(ud)
-    dest = profile.write(obj, out_dir)
+    dest = profile.write(obj, out_dir) if hdbest else None  # off when only the HoshiDori file is wanted
     return obj, dest
