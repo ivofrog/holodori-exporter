@@ -13,7 +13,7 @@ from rich.markup import escape
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
-from . import __version__, profile, text
+from . import __version__, hoshidori, profile, text
 from .client import GameClient, GameError
 from .sources import credential as credential_source
 from .sources import steam as steam_source
@@ -146,8 +146,7 @@ def show_result(ui: Ui, obj: dict, dest: str, source: str, region: str) -> None:
     counts = profile.summary(obj)
     ui.print(result_table(counts, region))
     ui.print(f"[green]done[/] {escape(text.RESULT_DONE.format(dest=dest))}")
-    if source == "transfer":
-        ui.status(text.TRANSFER_NOTE)
+    ui.status(text.TRANSFER_NOTE if source == "transfer" else text.SIGNOUT_NOTE)
     ui.status(text.UPLOAD_HINT)
     ui.emit(
         {
@@ -157,6 +156,42 @@ def show_result(ui: Ui, obj: dict, dest: str, source: str, region: str) -> None:
             **counts,
         }
     )
+
+
+def show_hoshidori(ui: Ui, rep: dict) -> None:
+    ui.print(
+        "[green]done[/] "
+        + escape(
+            text.HSDR_RESULT.format(
+                dest=rep["dest"], owned=rep["owned"], total=rep["total"], ranks=rep["ranks"]
+            )
+        )
+    )
+    ui.status(
+        text.HSDR_RESULT_MATS.format(
+            mats=", ".join(f"{k.split('_tree_')[-1]}={v}" for k, v in rep["resources"].items())
+        )
+    )
+    if rep["uncertainLevels"]:
+        ui.err.print(
+            "[yellow]"
+            + escape(
+                text.HSDR_UNCERTAIN.format(
+                    n=len(rep["uncertainLevels"]),
+                    cards=", ".join(u["card"] for u in rep["uncertainLevels"]),
+                )
+            )
+            + "[/]"
+        )
+    for w in rep["warnings"]:
+        ui.err.print(f"[yellow]{escape(w)}[/]")
+    if rep.get("boardsDest"):
+        ui.print(
+            "[green]done[/] "
+            + escape(text.HSDR_RESULT_BOARDS.format(dest=rep["boardsDest"], **{k: rep["boards"][k] for k in ("holomems", "nodes")}))
+        )
+    ui.status(text.HSDR_IMPORT_HINT)
+    ui.emit({"hoshidori": rep})
 
 
 def _report(ui: Ui, message: str, code: Code) -> NoReturn:
@@ -219,6 +254,15 @@ def main(
     credential: Annotated[
         Optional[str], typer.Option("--credential", help=text.OPT_CREDENTIAL)
     ] = None,
+    no_hdbest: Annotated[
+        bool, typer.Option("--no-hdbest", help=text.OPT_NO_HDBEST)
+    ] = False,
+    hoshidori_: Annotated[
+        bool, typer.Option("--hoshidori", help=text.OPT_HOSHIDORI)
+    ] = False,
+    hoshidori_base: Annotated[
+        Optional[str], typer.Option("--hoshidori-base", help=text.OPT_HOSHIDORI_BASE)
+    ] = None,
     yes: Annotated[bool, typer.Option("--yes", "-y", help=text.OPT_YES)] = False,
     json_: Annotated[bool, typer.Option("--json", help=text.OPT_JSON)] = False,
     quiet: Annotated[bool, typer.Option("--quiet", "-q", help=text.OPT_QUIET)] = False,
@@ -232,19 +276,29 @@ def main(
     ui = Ui(json=json_, quiet=quiet, yes=yes)
 
     def body() -> None:
+        if no_hdbest and not hoshidori_:
+            fail(text.ERR_NOTHING_TO_EXPORT, Code.USAGE)
         if source is Source.mitm:
+            if hoshidori_:
+                fail(text.HSDR_ERR_MITM, Code.USAGE)
             ui.print(text.MITM_INSTRUCTIONS)
             return
 
         reg = region or ui.choose(text.ASK_REGION, ["us", "as", "jp"], "--region")
+        if source is not Source.transfer and not ui.confirm(text.CONFIRM_SIGNOUT, True):
+            fail(text.ERR_ABORTED, Code.ABORTED)
         with GameClient(reg) as client:
             if source is Source.steam:
-                obj, dest = steam_source.run(client, out, echo=ui.status)
+                obj, dest = steam_source.run(
+                    client, out, echo=ui.status, hdbest=not no_hdbest
+                )
             elif source is Source.credential:
                 cred = credential or ui.ask(
                     text.ASK_CREDENTIAL, "--credential", password=True
                 )
-                obj, dest = credential_source.run(client, cred, out, echo=ui.status)
+                obj, dest = credential_source.run(
+                    client, cred, out, echo=ui.status, hdbest=not no_hdbest
+                )
             else:
                 if migration_id is None:
                     mig = ui.ask(
@@ -269,9 +323,20 @@ def main(
                     pwd = password
                 if not ui.confirm(text.CONFIRM_TRANSFER, True):
                     fail(text.ERR_ABORTED, Code.ABORTED)
-                obj, dest = transfer_source.run(client, mig, pwd, out, echo=ui.status)
+                obj, dest = transfer_source.run(
+                    client, mig, pwd, out, echo=ui.status, hdbest=not no_hdbest
+                )
 
-        show_result(ui, obj, str(dest), source.value, reg)
+            hsdr = None
+            if hoshidori_:
+                _, hsdr = hoshidori.export(client, out, hoshidori_base, echo=ui.status)
+
+        if dest is not None:
+            show_result(ui, obj, str(dest), source.value, reg)
+        else:
+            ui.status(text.TRANSFER_NOTE if source.value == "transfer" else text.SIGNOUT_NOTE)
+        if hsdr:
+            show_hoshidori(ui, hsdr)
 
     handle(ui, body)
 

@@ -16,6 +16,7 @@ MIG_PREP_PASSWORD = "rpc.api.AccountMigration/PrepareMigrationPassword"
 MIG_MIGRATE = "rpc.api.AccountMigration/Migrate"
 MASTER_GET = "rpc.api.Master/Get"
 USER_GET = "rpc.api.User/Get"
+PROFILE_DETAIL = "rpc.api.Profile/GetUserProfileDetail"
 
 _REGION_LANG = {"as": "eng", "us": "eng", "jp": "jpn"}
 
@@ -76,6 +77,9 @@ class GameClient:
         self.lang = _REGION_LANG[region]
         self.session = requests.Session(impersonate="chrome", timeout=30)
         self.master_version: str | None = None
+        # kept from the last login / download so extra exports (hoshidori.py) can reuse them
+        self.token: str | None = None
+        self.user_data: dict[int, list] | None = None
 
     def close(self) -> None:
         try:
@@ -128,9 +132,10 @@ class GameClient:
         )
 
     def auth_login(self, credential: str) -> str:
-        return proto.get_str(
+        self.token = proto.get_str(
             self.call(AUTH_LOGIN, proto.string_field(1, credential)), 1
         )
+        return self.token
 
     def _linked_user_info(self, resp: dict[int, list]) -> dict:
         lr = proto.get(resp, 1)
@@ -191,4 +196,16 @@ class GameClient:
         ud = proto.decode(raw) if isinstance(raw, (bytes, bytearray)) else {}
         if schema.field("UserData", "user") not in ud:
             raise GameError(text.ERR_NO_USER_DATA)
+        self.user_data = ud
         return ud
+
+    def profile_character_ranks(self, token: str | None, public_user_id: str) -> dict[str, int]:
+        """Holomem ranks, as the game's own profile page shows them."""
+        from .hoshidori import _field, parse_character_ranks
+
+        self.ensure_master_version()
+        body = proto.string_field(
+            _field("ProfileGetUserProfileDetailRequest", "public_user_id", 1),
+            public_user_id,
+        )
+        return parse_character_ranks(self.call(PROFILE_DETAIL, body, token=token))
