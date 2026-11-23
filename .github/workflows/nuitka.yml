@@ -4,6 +4,11 @@ on:
   push:
   workflow_dispatch:
     inputs:
+      platforms:
+        description: "Which builds to make"
+        type: choice
+        options: [all, linux]
+        default: all
       release_tag:
         description: "Attach the builds to this existing release tag (e.g. v1.1.1); leave empty to just build"
         required: false
@@ -18,16 +23,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: windows-latest
-            suffix: windows
-            pkg: --onefile --windows-console-mode=attach --enable-plugin=upx --onefile-no-compression --windows-icon-from-ico=holodori_profile_export/assets/favicon.ico
-          - os: ubuntu-latest
-            suffix: linux
-            pkg: --onefile --enable-plugin=upx --onefile-no-compression --linux-icon=holodori_profile_export/assets/icon.png
-          - os: macos-latest
-            suffix: macos
-            pkg: --standalone --macos-create-app-bundle --macos-app-name="holodori exporter" --macos-app-icon=holodori_profile_export/assets/icon.icns
+        # pushes build everything; a manual run can pick Linux only
+        os: ${{ fromJSON(inputs.platforms == 'linux' && '["ubuntu-latest"]' || '["windows-latest","ubuntu-latest","macos-latest"]') }}
+    env:
+      SUFFIX: ${{ matrix.os == 'windows-latest' && 'windows' || (matrix.os == 'macos-latest' && 'macos' || 'linux') }}
+      PKG: ${{ matrix.os == 'windows-latest' && '--onefile --windows-console-mode=attach --enable-plugin=upx --onefile-no-compression --windows-icon-from-ico=holodori_profile_export/assets/favicon.ico' || (matrix.os == 'macos-latest' && '--standalone --macos-create-app-bundle --macos-app-name="holodori exporter" --macos-app-icon=holodori_profile_export/assets/icon.icns' || '--onefile --enable-plugin=upx --onefile-no-compression --linux-icon=holodori_profile_export/assets/icon.png') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -84,11 +84,11 @@ jobs:
           --lto=yes
           --python-flag=-O
           --remove-output
-          ${{ matrix.pkg }}
+          ${{ env.PKG }}
           --assume-yes-for-downloads
           --enable-plugin=tk-inter
           --output-dir=dist
-          --output-filename=holodori-exporter-${{ matrix.suffix }}
+          --output-filename=holodori-exporter-${{ env.SUFFIX }}
           --include-package=holodori_profile_export
           --include-package-data=holodori_profile_export
           --include-package-data=curl_cffi
