@@ -1,7 +1,6 @@
 # holodori exporter
 Export your **hololive Dreams** game account into a portable **`.hdbest` profile** you can import on
-[holodori.best](https://holodori.best) as a profile, and (optionally) **HoshiDori** inventory and
-holoboard files for HoshiDori.
+[holodori.best](https://holodori.best) as a profile, and **HoshiDori** inventory + holoboard files for HoshiDori.
 
 This is a fork of [HolodoriDB/holodori-profile-export](https://github.com/HolodoriDB/holodori-profile-export)
 that adds the HoshiDori export and a redesigned app.
@@ -46,7 +45,7 @@ python main.py --source steam --hoshidori --no-hdbest                           
 | resources (cubes & hexas) | what your boards have spent (node costs built into the exporter) **plus** what you hold in the game right now. |
 | holoboards | a second file, `<user id>.hoshidori-holoboards.json`, for HoshiDori → Holoboard → profile menu (⋯) → **Import JSON**. HoshiDori adds it as a new Holoboard profile; existing ones are never overwritten. |
 | preset / defaults | copied from `--hoshidori-base` if given; otherwise left out, so HoshiDori keeps the selected profile's own (its Import JSON only replaces sections the file contains). |
-| custom cards | kept exactly (owned, bloom, level) from `--hoshidori-base`. Without a base file HoshiDori still keeps them, but resets them to its preset defaults (e.g. owned, B1, max level). |
+| custom cards | kept exactly (owned, bloom, level) from `--hoshidori-base`. Without a base file, HoshiDori still keeps them, but resets them to its preset defaults (e.g. owned, B1, max level). |
 
 HoshiDori's Import JSON rejects a whole file if it names a card or holomem it doesn't know. So:
 
@@ -80,7 +79,7 @@ Launch the game on this PC and log in at least once. It reads the newest credent
 ```
 python main.py --source transfer --migration-id <ID> --password <PW>
 ```
-Logs in with transfer credentials (logs you out on your real device), then downloads your user data.
+Logs in with transfer credentials, then downloads your user data.
 
 You can log in again by simplying restarting the game on your real device.
 
@@ -95,7 +94,7 @@ If you've somehow extracted your game credential (NOT TRANSFER ID/PASSWORD), you
 > [!NOTE]
 > This source was added upstream, so I decided to keep it in this fork.
 >
-> HoshiDori files from `mitm` are coming in the next version. Ranks would be included when you visit your profile in-game, and left out with a note otherwise.
+> Ranks would be included when you visit your profile in-game, and left out (with a warning) otherwise.
 
 ```
 pip install mitmproxy
