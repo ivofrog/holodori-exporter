@@ -99,21 +99,39 @@ jobs:
           --product-version=${{ steps.ver.outputs.version }}
           main.py
 
-      - name: Normalize app name (macOS)
+      # Each download is a zip named holodori-exporter-<os>.zip holding the app named "holodori exporter".
+      - name: Package (macOS)
         if: runner.os == 'macOS'
         shell: bash
         run: |
           app=$(ls -d dist/*.app | head -n1)
-          target="dist/holodori exporter.app"   # the name Finder shows
+          target="dist/holodori exporter.app"
           [ "$app" = "$target" ] || mv "$app" "$target"
           # A .app is a folder; zip it with ditto so it keeps its permissions and still opens after download
           ditto -c -k --keepParent "$target" dist/holodori-exporter-macos.zip
-          rm -rf "$target"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force pkg | Out-Null
+          $exe = Get-ChildItem dist -File -Filter "holodori-exporter-windows*" | Select-Object -First 1
+          Move-Item $exe.FullName "pkg/holodori exporter.exe"
+          Compress-Archive -Path "pkg/holodori exporter.exe" -DestinationPath dist/holodori-exporter-windows.zip
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p pkg
+          mv dist/holodori-exporter-linux "pkg/holodori exporter"
+          chmod +x "pkg/holodori exporter"
+          (cd pkg && zip -X ../dist/holodori-exporter-linux.zip "holodori exporter")
 
       - uses: actions/upload-artifact@v4
         with:
           name: holodori-exporter-${{ matrix.os }}
-          path: dist/holodori-exporter*
+          path: dist/holodori-exporter-*.zip
           if-no-files-found: error
 
   # Pushing a tag like v1.1.1 publishes the builds as a GitHub release anyone can download.
