@@ -91,6 +91,12 @@ python main.py --source credential --credential <ACCOUNT CREDENTIAL>
 If you've somehow extracted your game credential (NOT TRANSFER ID/PASSWORD), you can use it directly.
 
 ### `mitm` (advanced)
+
+> [!NOTE]
+> This source was added upstream, so I decided to keep it in this fork.
+>
+> HoshiDori files from `mitm` are coming in the next version. Ranks would be included when you visit your profile in-game, and left out with a note otherwise.
+
 ```
 pip install mitmproxy
 mitmdump -s holodori_profile_export/sources/mitm.py --set hdbest_out=.
