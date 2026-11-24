@@ -52,36 +52,47 @@ HoshiDori's Import JSON rejects a whole file if it names a card or holomem it do
 - With `--hoshidori-base`, cards and holomems that aren't in that file (new ones HoshiDori hasn't added yet) are left out and listed as a warning.
 - If you delete a custom card in HoshiDori after exporting your settings, export them again before running this; otherwise HoshiDori won't import the file.
 
-Not available with `--source mitm`. Your login is only ever sent to the game servers. The card list
+Your login is only ever sent to the game servers. The card list
 and holoboard node costs are built into the exporter (`gamedata.py`), so it makes no other requests.
 Every holomem's board uses the same node costs, so new holomems are covered; if a game update adds
 new nodes or cards, the done screen says so.
 
 > [!NOTE]
-> Every source except `mitm` signs in to the game servers, which signs the game out wherever it is open. Close the game first and reopen it afterwards.
+> Signing in (Steam, transfer or credential) signs the game out wherever it is open. Close the game first and reopen it afterwards.
 
 ## Sources (`--source`)
 
 | source | platform | how |
 | --- | --- | --- |
-| `steam` | Windows (Steam) | Finds and reads the game's credential from your installed Steam game. |
-| `mitm` | Any platform | Intercept the game's network traffic using mitm to read the user data request's response. May no longer work with current versions of the game. |
+| `steam` | Windows, Linux (Proton), macOS (CrossOver / Whisky) | Finds and reads the game's saved sign-in from the Steam version on this computer. |
 | `transfer` | Any platform | Logs in with your in-game transfer id + password; log back in on your device afterward. |
 | `credential` | Any platform | Logs in with a raw account credential you already have (advanced). |
+
+There's also a command-line-only `mitm` source (which may no longer work with current versions of the game), see [Advanced: command line only](#advanced-command-line-only).
 
 ### `steam`
 ```
 python main.py --source steam
 ```
-Launch the game on this PC and log in at least once. It reads the newest credential file in `%USERPROFILE%\AppData\LocalLow\QualiArts, Inc_\hololive-Dreams`, to download user data.
+Launch the game on this PC and log in at least once. It reads the newest credential file in the game's data folder, to download user data:
+
+- **Windows:** `%USERPROFILE%\AppData\LocalLow\QualiArts, Inc_\hololive-Dreams`
+- **Linux (Steam / Proton):** found automatically in Steam's Proton folder for the game, including extra Steam library drives, e.g. `~/.steam/steam/steamapps/compatdata/4282500/pfx/drive_c/users/steamuser/AppData/LocalLow/QualiArts, Inc_/hololive-Dreams`
+- **macOS (CrossOver / Whisky):** found automatically inside your CrossOver or Whisky bottles (and plain Wine).
+
+If it's somewhere else, pick the folder in the app (**Change…** next to *Game data folder*) or pass `--steam-folder "<path to the hololive-Dreams folder>"`.
+
+The app remembers your region, save-to folder and game data folder for next time, in a small `settings.json`
+(Windows: `%APPDATA%\holodori-exporter`, macOS: `~/Library/Application Support/holodori-exporter`,
+Linux: `~/.config/holodori-exporter`). It never stores a sign-in or any account data.
 
 ### `transfer`
 ```
 python main.py --source transfer --migration-id <ID> --password <PW>
 ```
-Logs in with transfer credentials, then downloads your user data.
+Logs in with transfer credentials (logs you out on your real device), then downloads your user data.
 
-You can log in again by simplying restarting the game on your real device.
+You can log in again by simply restarting the game on your real device.
 
 ### `credential` (advanced)
 ```
@@ -89,12 +100,18 @@ python main.py --source credential --credential <ACCOUNT CREDENTIAL>
 ```
 If you've somehow extracted your game credential (NOT TRANSFER ID/PASSWORD), you can use it directly.
 
-### `mitm` (advanced)
+## Advanced: command line only
+
+These aren't in the app; they're only available from a terminal.
+
+### `mitm`
 
 > [!NOTE]
 > This source was added upstream, so I decided to keep it in this fork.
 >
 > Ranks would be included when you visit your profile in-game, and left out (with a warning) otherwise.
+
+Reads your account by watching the game's own network traffic, instead of signing in, so the game is **not** signed out.
 
 ```
 pip install mitmproxy
@@ -102,6 +119,12 @@ mitmdump -s holodori_profile_export/sources/mitm.py --set hdbest_out=.
 ```
 Route the game client through mitmproxy (trust its CA), then launch/relaunch the game (load into the game past the title screen!). When the home
 screen loads, the script decodes the snapshot and writes the `.hdbest`.
+
+To also make the HoshiDori files, add `--set hoshidori=true` (and `--set hoshidori_base=<file>` to build on your current HoshiDori settings and keep custom cards; `--set no_hdbest=true` skips the `.hdbest`):
+
+```
+mitmdump -s holodori_profile_export/sources/mitm.py --set hdbest_out=. --set hoshidori=true
+```
 
 Basic knowledge on how to intercept network requests (or use a proxy) is required.
 
@@ -113,6 +136,18 @@ Basic knowledge on how to intercept network requests (or use a proxy) is require
 *Easy for non-Android devices. Requires a rooted Android device if used on Android.
 
 ## Changelog
+
+### 1.1.2
+- **Steam on Linux and macOS:** the game's sign-in is now found automatically on Linux (Steam / Proton, including
+  extra Steam library drives) and on macOS (CrossOver, Whisky or plain Wine).
+- **Pick the game data folder:** if it's somewhere else, choose it with **Change…** in the app, or pass `--steam-folder`.
+- **Remembers your settings:** region, save-to folder and game data folder are kept for next time (never your sign-in).
+- **`mitm` can make HoshiDori files** (`--set hoshidori=true`). Ranks are added once you open your profile screen in the game.
+- The Steam step now says it exports the account you last signed in with.
+- A rejected transfer ID/password now says what to check, instead of `AccountMigration/Migrate failed (grpc-status=3)`.
+- **Fixed:** the window could be resized smaller than its content, cutting off the bottom; text now wraps to fit.
+- **Fixed:** toggles and sign-in icons looked blurry or clipped on macOS; they're now drawn sharp and centered.
+- Tweaked interface colors and adjusted text descriptions for clarity. The title bar now blends into the app on macOS and Windows 11 (dark on Windows 10).
 
 ### 1.1.1 (bug fix)
 - **Fixed:** cards below their level cap were exported with the wrong level (often their max level) and a
