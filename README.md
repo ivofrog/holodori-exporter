@@ -65,7 +65,7 @@ new nodes or cards, the done screen says so.
 | source | platform | how |
 | --- | --- | --- |
 | `steam` | Windows (Steam) | Finds and reads the game's credential from your installed Steam game. |
-| `mitm` | Any platform | Intercept the game's network traffic using mitm to read the user data request's response. |
+| `mitm` | Any platform | Intercept the game's network traffic using mitm to read the user data request's response. May no longer work with current versions of the game. |
 | `transfer` | Any platform | Logs in with your in-game transfer id + password; log back in on your device afterward. |
 | `credential` | Any platform | Logs in with a raw account credential you already have (advanced). |
 
@@ -105,10 +105,10 @@ screen loads, the script decodes the snapshot and writes the `.hdbest`.
 
 Basic knowledge on how to intercept network requests (or use a proxy) is required.
 
-> [!TIP]
-> The `--emudhra` option found on newer versions of mitmproxy can bypass the need for you to trust the CA.
-> 
-> It is unknown how much longer this will work though, as Unity has released a fix in newer Unity versions that no longer trusts the leaked certificates from eMudhra, and emails were sent to all Unity developers.
+> [!WARNING]
+> **This may no longer work.** The game ignores the certificates trusted on your device, so it rejects mitmproxy's certificate.
+> The `--emudhra` option found on newer versions of mitmproxy used to get around this, but Unity has released a fix that no longer trusts the leaked eMudhra certificates, and current versions of the game reject it too.
+> Use the `steam` or `transfer` source instead.
 
 *Easy for non-Android devices. Requires a rooted Android device if used on Android.
 
