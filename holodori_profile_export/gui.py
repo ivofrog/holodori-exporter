@@ -11,7 +11,7 @@ from pathlib import Path
 import customtkinter as ctk
 from tkinter import filedialog
 
-from . import __version__, hoshidori, text
+from . import __version__, hoshidori, settings, text
 from .client import GameClient
 from .sources import credential, steam, transfer
 
@@ -33,8 +33,56 @@ def _set_macos_app_name(name: str) -> None:
         pass
 
 
+def _hex_rgb(color: str) -> tuple[int, int, int]:
+    c = color.lstrip("#")
+    return int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+
+
+def _blend_titlebar(window, bg: str, fg: str) -> None:
+    """Color the system title bar like the app so the window looks borderless, while keeping the
+    real title bar (dragging, buttons, resizing, taskbar/Dock all keep working). Best effort:
+    Windows 11 takes the exact color, Windows 10 only goes dark, macOS shows the app background
+    through a transparent title bar, Linux is left to the desktop."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
+            dwm = ctypes.windll.dwmapi
+
+            def put(attr: int, value: int) -> int:
+                v = ctypes.c_int(value)
+                return dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(v), ctypes.sizeof(v))
+
+            if put(20, 1) != 0:  # DWMWA_USE_IMMERSIVE_DARK_MODE (19 on early Windows 10 builds)
+                put(19, 1)
+
+            def colorref(color: str) -> int:
+                r, g, b = _hex_rgb(color)
+                return r | (g << 8) | (b << 16)
+
+            put(35, colorref(bg))  # DWMWA_CAPTION_COLOR  (Windows 11; ignored on 10)
+            put(36, colorref(fg))  # DWMWA_TEXT_COLOR
+            put(34, colorref(bg))  # DWMWA_BORDER_COLOR
+        elif sys.platform == "darwin":
+            from AppKit import NSApp, NSAppearance, NSColor  # pyobjc-framework-Cocoa
+
+            r, g, b = (v / 255 for v in _hex_rgb(bg))
+            color = NSColor.colorWithSRGBRed_green_blue_alpha_(r, g, b, 1.0)
+            dark = NSAppearance.appearanceNamed_("NSAppearanceNameDarkAqua")
+            for w in NSApp.windows():
+                if not w.isVisible() or w.isSheet():
+                    continue
+                w.setAppearance_(dark)
+                w.setTitlebarAppearsTransparent_(True)
+                w.setTitleVisibility_(1)  # NSWindowTitleHidden: the sidebar already shows the name
+                w.setBackgroundColor_(color)
+    except Exception:
+        pass
+
+
 class C:
-    """Colours: a Kobo Kanaeru theme (deep rain-navy with Kobo cyan)."""
+    """Colors: a Kobo Kanaeru theme (deep rain-navy with Kobo cyan)."""
 
     BG = "#0b151f"          # page
     PANEL = "#141f2c"       # cards / sidebar
@@ -50,8 +98,10 @@ class C:
     ACCENT_SOFT = "#1d3542" # selected / active
     ACCENT_SEG = "#245b67"  # selected segment
     ON_ACCENT = "#0b151f"
-    OK = "#f2a0a8"          # pale red (done / success), goes with Kobo's red ribbon
-    OK_SOFT = "#3a2530"
+    OK = "#f0757a"          # Kobo coral red (highlights, done), between pale pink and her artwork's red
+    OK_SOFT = "#3b2328"     # faint coral tint (selected card, hovers)
+    WHITE = "#f4f6fa"       # main buttons (Kobo's white jacket)
+    WHITE_HOVER = "#dde3ec"
     WARN = "#f4c16f"
     WARN_SOFT = "#2c2416"
     ERR = "#ff5c6c"         # errors: a stronger red than the pale "done" red
@@ -101,7 +151,7 @@ def M(size: int = 11, weight: str = "bold") -> ctk.CTkFont:
 _SOURCES = [
     ("steam", text.UI_SRC_STEAM, text.UI_SRC_STEAM_DESC, "▶"),
     ("transfer", text.UI_SRC_TRANSFER, text.UI_SRC_TRANSFER_DESC, "⇄"),
-    ("credential", text.UI_SRC_CREDENTIAL, text.UI_SRC_CREDENTIAL_DESC, "⚙"),
+    ("credential", text.UI_SRC_CREDENTIAL, text.UI_SRC_CREDENTIAL_DESC, "\u2630"),  # ☰ three-bar icon
 ]
 _STEPS = [text.UI_STEP_METHOD, text.UI_STEP_ACCOUNT, text.UI_STEP_EXPORT]
 
@@ -128,18 +178,24 @@ class App(ctk.CTk):
             pass
         _pick_fonts()
         self.title(text.GUI_TITLE)
-        self.geometry("1060x760")
+        self.geometry("1000x720")  # open at the minimum; _fit_window grows it only if the content needs more
         self.minsize(1000, 720)
         self._set_icon()
         self.after(250, self._set_icon)
+        self.after(50, lambda: _blend_titlebar(self, C.BG, C.TEXT))
+        self.after(400, lambda: _blend_titlebar(self, C.BG, C.TEXT))  # again once the window is on screen
 
         self.q: queue.Queue = queue.Queue()
+        saved = settings.load()  # remembered from the last run (never holds a sign-in)
         self.source = "steam"
-        self.region = "us"
-        self.out_dir = os.getcwd()
+        self.region = saved.get("region") if saved.get("region") in ("us", "as", "jp") else "us"
+        out = saved.get("out_dir")
+        self.out_dir = out if isinstance(out, str) and os.path.isdir(out) else os.getcwd()
         self.hdb = ctk.BooleanVar(value=True)
         self.hsdr = ctk.BooleanVar(value=True)
         self.hsdr_base = ""
+        sd = saved.get("steam_dir")
+        self.steam_dir = sd if isinstance(sd, str) and os.path.isdir(sd) else ""  # empty = found automatically
 
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -153,6 +209,8 @@ class App(ctk.CTk):
         self.main.grid(row=0, column=1, sticky="nsew")
         self._build_sidebar()
         self._step_source()
+        self._fit_job = None
+        self.bind("<Configure>", self._on_resize, add="+")
 
     # ------------------------------------------------------------ chrome
 
@@ -200,7 +258,7 @@ class App(ctk.CTk):
             ctk.CTkLabel(head, text="", image=logo, width=34, height=34).pack(side="left")
         else:
             ctk.CTkLabel(head, text="\u2602", font=F(18, "bold"), text_color=C.ACCENT).pack(side="left")
-        ctk.CTkLabel(head, text=text.UI_APP_NAME, font=F(15, "bold"), text_color=C.TEXT).pack(
+        ctk.CTkLabel(head, text=text.UI_APP_NAME, font=F(15, "bold"), text_color=C.OK).pack(
             side="left", padx=(8, 0)
         )
         ctk.CTkLabel(
@@ -257,10 +315,48 @@ class App(ctk.CTk):
     def _card(self, parent, **kw):
         return ctk.CTkFrame(parent, corner_radius=18, fg_color=C.PANEL, border_width=1, border_color=C.EDGE, **kw)
 
+    _BASE_MIN = (1000, 720)
+
+    def _fit_window(self) -> None:
+        """Never let the window be smaller than its content needs, so nothing gets cut off.
+        Measured from the widgets themselves, so it follows text length and wrapping."""
+        self._fit_job = None
+        try:
+            self.update_idletasks()
+            need_w = max(self._BASE_MIN[0], self.winfo_reqwidth())
+            need_h = max(self._BASE_MIN[1], self.winfo_reqheight())
+            self.minsize(need_w, need_h)
+            cur_w, cur_h = self.winfo_width(), self.winfo_height()
+            if cur_w > 1 and (cur_w < need_w or cur_h < need_h):
+                self.geometry(f"{max(cur_w, need_w)}x{max(cur_h, need_h)}")
+        except Exception:
+            pass
+
+    def _on_resize(self, event) -> None:
+        if event.widget is self and self._fit_job is None:
+            self._fit_job = self.after(120, self._fit_window)  # after text re-wraps to the new width
+
+    def _autowrap(self, label, pad: int) -> None:
+        """Wrap a label's text to the current width of its container (minus pad), not a fixed width."""
+        holder = label.master
+
+        def on_configure(e):
+            try:
+                scale = float(ctk.ScalingTracker.get_widget_scaling(label))
+            except Exception:
+                scale = 1.0
+            width = max(80, int(e.width / scale) - pad)
+            if getattr(label, "_wrap_now", None) != width:
+                label._wrap_now = width
+                label.configure(wraplength=width)
+
+        holder.bind("<Configure>", on_configure, add="+")
+
     def _screen(self, step: int, title: str, sub: str = "", *, done_upto: int | None = None, scroll: bool = False):
         """Clear the main area; return (body, footer). body sits inside a rounded content card."""
         for w in self.main.winfo_children():
             w.destroy()
+        self.after_idle(self._fit_window)  # runs once this screen's widgets are all built
         self._set_step(step, done_upto)
         wrap = ctk.CTkFrame(self.main, fg_color="transparent")
         wrap.pack(fill="both", expand=True, padx=(14, 14), pady=14)
@@ -272,9 +368,11 @@ class App(ctk.CTk):
             fill="x", padx=22, pady=(14, 0)
         )
         ctk.CTkLabel(head, text=title, font=F(26, "bold"), text_color=C.TEXT, anchor="w").pack(fill="x", padx=22)
-        ctk.CTkLabel(
-            head, text=sub or " ", font=F(13), text_color=C.MUTED, anchor="w", justify="left", wraplength=680,
-        ).pack(fill="x", padx=22, pady=(0, 14))
+        sub_lbl = ctk.CTkLabel(
+            head, text=sub or " ", font=F(13), text_color=C.MUTED, anchor="w", justify="left", wraplength=600,
+        )
+        sub_lbl.pack(fill="x", padx=22, pady=(0, 14))
+        self._autowrap(sub_lbl, 48)
 
         footer = ctk.CTkFrame(wrap, fg_color="transparent")
         footer.pack(side="bottom", fill="x", pady=(12, 0))
@@ -296,7 +394,7 @@ class App(ctk.CTk):
     def _primary(self, parent, label: str, command, width: int = 150):
         return ctk.CTkButton(
             parent, text=label, command=command, width=width, height=42, corner_radius=12,
-            font=F(13, "bold"), fg_color=C.ACCENT, hover_color=C.ACCENT_HOVER, text_color=C.ON_ACCENT,
+            font=F(13, "bold"), fg_color=C.WHITE, hover_color=C.WHITE_HOVER, text_color=C.ON_ACCENT,
         )
 
     def _ghost(self, parent, label: str, command, width: int = 110):
@@ -386,23 +484,43 @@ class App(ctk.CTk):
         card = ctk.CTkFrame(parent, corner_radius=12, border_width=1, fg_color=C.SOFT, border_color=C.LINE)
         top = ctk.CTkFrame(card, fg_color="transparent")
         top.pack(fill="x", padx=14, pady=(12, 0))
+        # macOS: the icon is drawn as vector shapes on a Tk canvas (exactly centered, Retina-sharp).
+        # Elsewhere: a text glyph (Tk's canvas isn't anti-aliased on Windows/Linux).
+        mac = sys.platform == "darwin"
         icon = ctk.CTkLabel(
-            top, text=glyph, width=32, height=32, corner_radius=10, font=F(14, "bold"),
-            fg_color=C.CONTROL, text_color=C.ACCENT,
+            top, text="" if mac else glyph, width=32, height=32, corner_radius=10,
+            font=F(14, "bold"), fg_color=C.CONTROL, text_color=C.ACCENT,
         )
         icon.pack(side="left")
-        ring = ctk.CTkLabel(top, text="", width=16, height=16, corner_radius=8, fg_color=C.LINE)
-        ring.pack(side="right")
+        card._shape = self._icon_shape(icon, key) if mac else None  # type: ignore[attr-defined]
         t = ctk.CTkLabel(card, text=title, font=F(14, "bold"), text_color=C.TEXT, anchor="w")
         t.pack(fill="x", padx=14, pady=(10, 0))
-        d = ctk.CTkLabel(card, text=desc, font=F(12), text_color=C.MUTED, anchor="nw", justify="left", wraplength=210)
+        d = ctk.CTkLabel(card, text=desc, font=F(12), text_color=C.MUTED, anchor="nw", justify="left", wraplength=200)
         d.pack(fill="both", expand=True, padx=14, pady=(2, 12))
-        card._ring = ring  # type: ignore[attr-defined]
+        self._autowrap(d, 32)
         card._icon = icon  # type: ignore[attr-defined]
         card._title = t  # type: ignore[attr-defined]
-        for w in (card, top, icon, t, d, ring):
+        for w in (card, top, icon, t, d):
             w.bind("<Button-1>", lambda _e, k=key: self._pick_source(k))
         return card
+
+    def _icon_shape(self, holder, kind: str):
+        """Draw a sign-in method icon (16x16) on a Tk canvas centered in its square. macOS only."""
+        import tkinter as tk
+
+        cv = tk.Canvas(holder, width=16, height=16, bg=C.CONTROL, highlightthickness=0, bd=0)
+        cv.place(relx=0.5, rely=0.5, anchor="center")
+        items = []  # (item, option to recolor)
+        if kind == "steam":  # play triangle, nudged right so it looks centered
+            items.append((cv.create_polygon(5, 2.5, 5, 13.5, 13.5, 8, outline=""), "fill"))
+        elif kind == "transfer":  # two opposite arrows
+            for y, x1, x2 in ((5, 2, 14), (11, 14, 2)):
+                items.append((cv.create_line(x1, y, x2, y, width=1.6, arrow="last", arrowshape=(4, 5, 2.5)), "fill"))
+        else:  # three bars
+            for y in (4, 8, 12):
+                items.append((cv.create_line(3, y, 13, y, width=1.8, capstyle="round"), "fill"))
+        cv.bind("<Button-1>", lambda _e, k=kind: self._pick_source(k))
+        return cv, items
 
     def _pick_source(self, key: str) -> None:
         self.source = key
@@ -411,13 +529,66 @@ class App(ctk.CTk):
     def _paint_cards(self) -> None:
         for key, card in self._cards.items():
             on = key == self.source
+            # blue highlight like the rest of the app
             card.configure(fg_color=C.ACCENT_SOFT if on else C.SOFT, border_color=C.ACCENT if on else C.LINE)
-            card._ring.configure(fg_color=C.ACCENT if on else C.LINE)  # type: ignore[attr-defined]
-            card._icon.configure(fg_color=C.EDGE if on else C.CONTROL)  # type: ignore[attr-defined]
+            card._icon.configure(fg_color=C.EDGE if on else C.CONTROL, text_color=C.ACCENT)  # type: ignore[attr-defined]
+            if card._shape:  # type: ignore[attr-defined]
+                cv, items = card._shape  # type: ignore[attr-defined]
+                cv.configure(bg=C.EDGE if on else C.CONTROL)
+                for item, kind in items:
+                    cv.itemconfigure(item, **{kind: C.ACCENT})
             card._title.configure(text_color=C.ACCENT if on else C.TEXT)  # type: ignore[attr-defined]
 
+    def _make_toggle(self, parent, var, color: str, bg: str = C.SOFT):
+        """On/off toggle in the target's color: a pill with a white circle inside it.
+
+        macOS: drawn on a plain Tk canvas, which macOS renders smoothly and Retina-sharp with exact
+        circles (customtkinter's own shapes there either clip a pixel or leave artifacts).
+        Windows/Linux: two customtkinter frames, whose default drawing is exact and smooth there."""
+        w, h, pad = 42, 24, 3
+        d = h - 2 * pad
+
+        def flip(_e=None):
+            var.set(not bool(var.get()))
+            self._paint_targets()
+
+        if sys.platform == "darwin":
+            import tkinter as tk
+
+            cv = tk.Canvas(parent, width=w, height=h, bg=bg, highlightthickness=0, bd=0, cursor="hand2")
+            # one thick line with round caps = the whole pill in a single shape (no seams between parts)
+            track = [cv.create_line(h / 2, h / 2, w - h / 2, h / 2, width=h, capstyle="round")]
+            knob = cv.create_oval(0, 0, d, d, fill="#ffffff", outline="")
+
+            def repaint(*_):
+                on = bool(var.get())
+                for item in track:
+                    cv.itemconfigure(item, fill=color if on else C.BORDER_HI)
+                x = (w - pad - d) if on else pad
+                cv.coords(knob, x, pad, x + d, pad + d)
+
+            var.trace_add("write", repaint)  # also follows changes made elsewhere
+            cv.bind("<Button-1>", flip)
+            repaint()
+            return cv
+
+        pill = ctk.CTkFrame(parent, width=w, height=h, corner_radius=h // 2, fg_color=C.BORDER_HI, cursor="hand2")
+        pill.pack_propagate(False)
+        knob = ctk.CTkFrame(pill, width=d, height=d, corner_radius=d // 2, fg_color="#ffffff", cursor="hand2")
+
+        def repaint(*_):
+            on = bool(var.get())
+            pill.configure(fg_color=color if on else C.BORDER_HI)
+            knob.place(x=(w - pad - d) if on else pad, y=pad)
+
+        var.trace_add("write", repaint)  # also follows changes made elsewhere
+        for wdg in (pill, knob):
+            wdg.bind("<Button-1>", flip)
+        repaint()
+        return pill
+
     def _target_tile(self, parent, var, title: str, desc: str, badge: str, color: str):
-        tile = ctk.CTkFrame(parent, corner_radius=12, border_width=1, fg_color=C.SOFT, border_color=C.LINE)
+        tile = ctk.CTkFrame(parent, corner_radius=12, border_width=1, fg_color=C.SOFT, border_color=C.EDGE)
         top = ctk.CTkFrame(tile, fg_color="transparent")
         top.pack(fill="x", padx=14, pady=(12, 0))
         ctk.CTkLabel(
@@ -427,14 +598,12 @@ class App(ctk.CTk):
         ctk.CTkLabel(top, text=title, font=F(14, "bold"), text_color=C.TEXT, anchor="w").pack(
             side="left", padx=(10, 0)
         )
-        ctk.CTkSwitch(
-            top, text="", variable=var, width=46, switch_width=42, switch_height=22,
-            progress_color=C.ACCENT, button_color="#ffffff", button_hover_color="#dff6f9", fg_color=C.BORDER_HI,
-            command=self._paint_targets,
-        ).pack(side="right")
-        ctk.CTkLabel(
-            tile, text=desc, font=F(12), text_color=C.MUTED, anchor="nw", justify="left", wraplength=330,
-        ).pack(fill="x", padx=14, pady=(8, 12))
+        self._make_toggle(top, var, color).pack(side="right")
+        desc_lbl = ctk.CTkLabel(
+            tile, text=desc, font=F(12), text_color=C.MUTED, anchor="nw", justify="left", wraplength=300,
+        )
+        desc_lbl.pack(fill="x", padx=14, pady=(8, 12))
+        self._autowrap(desc_lbl, 32)
         return tile
 
     def _hsdr_panel(self, parent) -> None:
@@ -496,6 +665,7 @@ class App(ctk.CTk):
             return
         self.region = (self._region.get() or "US").lower()
         self.out_dir = self._out_entry.get().strip() or os.getcwd()
+        settings.save(region=self.region, out_dir=self.out_dir if os.path.isdir(self.out_dir) else None)
         self._step_details()
 
     # ------------------------------------------------------------ step 2: account details
@@ -504,7 +674,8 @@ class App(ctk.CTk):
         if self.source == "steam":
             body, footer = self._screen(1, text.UI_STEAM_TITLE, text.UI_STEAM_SUB)
             self._notice(body, text.UI_SIGNOUT_NOTE, "warn").pack(fill="x", pady=(0, 10))
-            self._notice(body, text.UI_STEAM_NOTE, "info").pack(fill="x")
+            self._notice(body, text.UI_STEAM_NOTE, "info").pack(fill="x", pady=(0, 14))
+            self._steam_folder_row(body)
             self._summary(body)
         elif self.source == "credential":
             body, footer = self._screen(1, text.UI_CRED_TITLE, text.UI_CRED_SUB)
@@ -539,6 +710,39 @@ class App(ctk.CTk):
             fg_color=C.ACCENT, hover_color=C.ACCENT_HOVER, border_color=C.BORDER_HI, checkmark_color=C.ON_ACCENT,
             command=lambda: entry.configure(show="" if var.get() else "•"),
         ).pack(anchor="w", pady=(8, 0))
+
+    def _steam_folder_row(self, parent) -> None:
+        """Shows where the saved sign-in is read from, with a button to pick another folder."""
+        self._label(parent, text.UI_STEAM_FOLDER)
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x")
+        path_lbl = ctk.CTkLabel(row, text="", font=F(12), text_color=C.TEXT, anchor="w", justify="left", wraplength=480)
+        path_lbl.pack(side="left", fill="x", expand=True)
+        self._ghost(row, text.UI_STEAM_FOLDER_BTN, self._pick_steam_dir, width=110).pack(side="right", padx=(12, 0))
+        hint = ctk.CTkLabel(parent, text="", font=F(11), anchor="w", justify="left", wraplength=560)
+        hint.pack(fill="x", pady=(4, 10))
+        self._autowrap(hint, 8)
+        self._steam_lbls = (path_lbl, hint)
+        self._paint_steam_dir()
+
+    def _paint_steam_dir(self) -> None:
+        path_lbl, hint = self._steam_lbls
+        folder = steam.game_data_dir(self.steam_dir or None)
+        path_lbl.configure(text=str(folder))
+        if folder.is_dir():
+            hint.configure(text=text.UI_STEAM_FOLDER_HINT, text_color=C.FAINT)
+        else:
+            hint.configure(text=text.UI_STEAM_FOLDER_MISSING, text_color=C.WARN)
+
+    def _pick_steam_dir(self) -> None:
+        start = steam.game_data_dir(self.steam_dir or None)
+        d = filedialog.askdirectory(
+            title=text.UI_STEAM_FOLDER, initialdir=str(start if start.is_dir() else Path.home()), mustexist=True
+        )
+        if d:
+            self.steam_dir = d
+            settings.save(steam_dir=d)
+            self._paint_steam_dir()
 
     def _summary(self, parent) -> None:
         box = ctk.CTkFrame(parent, corner_radius=12, border_width=1, fg_color=C.SOFT, border_color=C.LINE)
@@ -599,7 +803,9 @@ class App(ctk.CTk):
         try:
             with GameClient(self.region) as client:
                 if self.source == "steam":
-                    _, dest = steam.run(client, self.out_dir, echo=echo, hdbest=bool(self.hdb.get()))
+                    _, dest = steam.run(
+                        client, self.out_dir, echo=echo, hdbest=bool(self.hdb.get()), data_dir=self.steam_dir or None
+                    )
                 elif self.source == "credential":
                     _, dest = credential.run(client, cred, self.out_dir, echo=echo, hdbest=bool(self.hdb.get()))
                 else:

@@ -123,6 +123,8 @@ class GameClient:
                     method=method, version=self._headers(None)["x-app-version"]
                 )
             )
+        if method == MIG_MIGRATE and gs == "3":
+            raise GameError(text.ERR_TRANSFER_REJECTED)
         if ct.startswith("application/grpc") and gs == "16":
             raise GameError(text.ERR_UNAUTHENTICATED.format(method=method))
         raise GameError(

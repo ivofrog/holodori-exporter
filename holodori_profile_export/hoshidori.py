@@ -359,7 +359,17 @@ def export(
         ranks = client.profile_character_ranks(client.token, uid)
     except Exception as e:  # noqa: BLE001 - ranks are optional; say why they're missing
         echo(text.HSDR_WARN_RANKS_FAILED.format(error=e))
+    return export_from(ud, ranks, out_dir, base_path)
 
+
+def export_from(
+    ud: dict[int, list],
+    ranks: dict[str, int],
+    out_dir: str | Path,
+    base_path: str | Path | None = None,
+) -> tuple[Path, dict]:
+    """Make both hsdr files from an account snapshot (used by every source, mitm included)."""
+    uid = public_user_id(ud)
     base = None
     if base_path:
         base = json.loads(Path(base_path).read_text(encoding="utf-8"))

@@ -263,6 +263,9 @@ def main(
     hoshidori_base: Annotated[
         Optional[str], typer.Option("--hoshidori-base", help=text.OPT_HOSHIDORI_BASE)
     ] = None,
+    steam_folder: Annotated[
+        Optional[str], typer.Option("--steam-folder", help=text.OPT_STEAM_FOLDER)
+    ] = None,
     yes: Annotated[bool, typer.Option("--yes", "-y", help=text.OPT_YES)] = False,
     json_: Annotated[bool, typer.Option("--json", help=text.OPT_JSON)] = False,
     quiet: Annotated[bool, typer.Option("--quiet", "-q", help=text.OPT_QUIET)] = False,
@@ -279,8 +282,6 @@ def main(
         if no_hdbest and not hoshidori_:
             fail(text.ERR_NOTHING_TO_EXPORT, Code.USAGE)
         if source is Source.mitm:
-            if hoshidori_:
-                fail(text.HSDR_ERR_MITM, Code.USAGE)
             ui.print(text.MITM_INSTRUCTIONS)
             return
 
@@ -290,7 +291,7 @@ def main(
         with GameClient(reg) as client:
             if source is Source.steam:
                 obj, dest = steam_source.run(
-                    client, out, echo=ui.status, hdbest=not no_hdbest
+                    client, out, echo=ui.status, hdbest=not no_hdbest, data_dir=steam_folder
                 )
             elif source is Source.credential:
                 cred = credential or ui.ask(
