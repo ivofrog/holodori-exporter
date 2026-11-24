@@ -221,7 +221,17 @@ class App(ctk.CTk):
 
             path = files("holodori_profile_export") / "assets" / "icon.webp"
             with Image.open(str(path)) as im:
-                self._icon = ImageTk.PhotoImage(im.convert("RGBA").resize((256, 256), Image.LANCZOS))
+                rgba = im.convert("RGBA")
+                self._icon = ImageTk.PhotoImage(rgba.resize((256, 256), Image.LANCZOS))
+                if sys.platform == "win32" and not getattr(self, "_ico_set", False):
+                    # Windows' title bar and taskbar use an .ico. Setting one also stops customtkinter
+                    # from putting its own logo there a moment after the window opens.
+                    import tempfile
+
+                    ico = os.path.join(tempfile.gettempdir(), "holodori-exporter-icon.ico")
+                    rgba.save(ico, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+                    self.iconbitmap(ico)
+                    self._ico_set = True
             self.iconphoto(True, self._icon)
         except Exception:
             pass
