@@ -45,7 +45,7 @@ python main.py --source steam --hoshidori --no-hdbest                           
 | resources (cubes & hexas) | what your boards have spent (node costs built into the exporter) **plus** what you hold in the game right now. |
 | memoryBonusPercentage | worked out from the memories (posters) you have collected. |
 | holoboards | a second file, `<user id>.hoshidori-holoboards.json`, for HoshiDori → Holoboard → profile menu (⋯) → **Import JSON**. HoshiDori adds it as a new Holoboard profile; existing ones are never overwritten. |
-| preset / defaults | copied from `--hoshidori-base` if given. Otherwise only the default blooms are written, as not owned, so cards newer than the exporter show as not owned; your other HoshiDori defaults (oshi, ranks, …) are kept. |
+| preset / defaults | copied from `--hoshidori-base` if given; otherwise left out, so HoshiDori keeps the selected profile's own (its Import JSON only replaces sections the file contains). |
 | custom cards | kept exactly (owned, bloom, level) from `--hoshidori-base`. Without a base file, HoshiDori still keeps them, but resets them to its preset defaults (e.g. owned, B1, max level). |
 
 HoshiDori's Import JSON rejects a whole file if it names a card or holomem it doesn't know. So:
@@ -137,6 +137,11 @@ Basic knowledge on how to intercept network requests (or use a proxy) is require
 *Easy for non-Android devices. Requires a rooted Android device if used on Android.
 
 ## Changelog
+
+### 1.2.1 (bug fix)
+- **Fixed:** exporting without **Import HoshiDori Inventory** reset your HoshiDori defaults (oshi, ranks and materials). Defaults are now only written when you import your HoshiDori inventory.
+- Cards newer than the exporter are marked not owned when you use **Import HoshiDori Inventory**.
+- When HoshiDori adds the upgrade bonus to its exports, it's carried over from your imported HoshiDori inventory automatically.
 
 ### 1.2.0
 - Made minor visual tweaks/adjustments.
