@@ -55,6 +55,15 @@ MATERIALS = [
     "item-skill_tree_content-1",  # yellow (Content)
     "item-skill_tree_content-2",
 ]
+# Newest game additions. HoshiDori rejects a whole file that names something it doesn't know, so these
+# can be switched off here if a future addition isn't supported by HoshiDori yet; while off, they're still
+# included whenever an imported HoshiDori inventory already lists them (see hsdr_supports_new()).
+# HoshiDori v1.33.0 supports Red Star Cubes and both nodes.
+HSDR_SUPPORTS_STAR_CUBES = True
+NEW_MATERIALS = [
+    "item-skill_tree_leader-3",  # Red Star Cube
+]
+NEW_NODES = frozenset({"G-026", "R-064"})  # R-064 = the Red Star Cube node at the top of the board
 
 BLANK_DEFAULTS = {
     "threeStarBloom": -1,
@@ -123,7 +132,7 @@ def user_cards(ud: dict[int, list]) -> dict[str, dict]:
 
 def held_materials(ud: dict[int, list]) -> dict[str, int]:
     """Cubes/hexas currently in the in-game inventory (not yet spent on boards)."""
-    held = {k: 0 for k in MATERIALS}
+    held = {k: 0 for k in MATERIALS + NEW_MATERIALS}
     item_id = schema.field("UserItem", "item_id")
     qty = schema.field("UserItem", "quantity")
     for raw in proto.get_list(ud, schema.field("UserData", "user_item_list")):
@@ -149,7 +158,14 @@ def user_boards(ud: dict[int, list]) -> dict[str, list[str]]:
     return out
 
 
-def user_board_builds(ud: dict[int, list], base_cards: dict | None = None) -> dict[str, dict]:
+def hsdr_supports_new(base: dict | None) -> bool:
+    """True if HoshiDori takes Red Star Cubes and the newest nodes: switched on in this version, or the
+    imported HoshiDori inventory already lists Red Star Cubes (so HoshiDori has added them)."""
+    res = (base or {}).get("resources") or {}
+    return HSDR_SUPPORTS_STAR_CUBES or any(k in res for k in NEW_MATERIALS)
+
+
+def user_board_builds(ud: dict[int, list], base_cards: dict | None = None, include_new: bool = False) -> dict[str, dict]:
     """Each holomem's board as hsdr stores it: unlocked nodes + the card connected to each slot."""
     M = "UserCharacterSkillTree"
     chr_f = schema.field(M, "character_id")
@@ -164,11 +180,34 @@ def user_board_builds(ud: dict[int, list], base_cards: dict | None = None) -> di
         if not cid:
             continue
         slots, conn = dec(proto.get_list(m, slots_f)), dec(proto.get_list(m, cards_f))
+        nodes = list(dict.fromkeys(dec(proto.get_list(m, nodes_f))))
+        if not include_new:
+            nodes = [n for n in nodes if n not in NEW_NODES]
         out[cid] = {
-            "selectedNodeIds": list(dict.fromkeys(dec(proto.get_list(m, nodes_f)))),
+            "selectedNodeIds": nodes,
             "connectCards": {s: card_key(c, base_cards) for s, c in zip(slots, conn) if s and c},
         }
     return out
+
+
+def memory_count(ud: dict[int, list]) -> int:
+    """Memories (posters) collected."""
+    pid = schema.field("UserPoster", "poster_id")
+    ids = {proto.get_str(proto.decode(raw), pid) for raw in proto.get_list(ud, schema.field("UserData", "user_poster_list"))}
+    ids.discard("")
+    return len(ids)
+
+
+def memory_bonus_pct(count: int) -> float:
+    """The game's memory bonus for this many memories, in percent (e.g. 48 -> 7.8)."""
+    permil = 0
+    for n, value in gamedata.MEMORY_EFFECTS:
+        if count >= n:
+            permil = value
+    last_n, last_value = gamedata.MEMORY_EFFECTS[-1]
+    if count > last_n:  # past the end of the known table: assume +0.1% per extra memory
+        permil = last_value + (count - last_n)
+    return permil / 10
 
 
 def player_name(ud: dict[int, list]) -> str:
@@ -215,7 +254,7 @@ def parse_character_ranks(resp: dict[int, list]) -> dict[str, int]:
 
 def spent_on_boards(boards: dict[str, list[str]]) -> tuple[dict[str, int], list[str]]:
     """Cubes/hexas spent = cost of every unlocked node. Returns (spent, node IDs with no known cost)."""
-    spent = {k: 0 for k in MATERIALS}
+    spent = {k: 0 for k in MATERIALS + NEW_MATERIALS}
     unknown: list[str] = []
     for chr_id, nodes in boards.items():
         for node in nodes:
@@ -224,7 +263,7 @@ def spent_on_boards(boards: dict[str, list[str]]) -> tuple[dict[str, int], list[
                 unknown.append(f"{chr_id}/{node}")
                 continue
             for item, qty in cost.items():
-                spent[item] += qty
+                spent[item] = spent.get(item, 0) + qty
     return spent, unknown
 
 
@@ -300,13 +339,17 @@ def build(
         report["warnings"].append(text.HSDR_WARN_NO_RANKS)
 
     held = held or {k: 0 for k in MATERIALS}
+    known = MATERIALS + (NEW_MATERIALS if hsdr_supports_new(base) else [])
     if spent is not None:
-        resources = {k: spent.get(k, 0) + held.get(k, 0) for k in MATERIALS}
+        resources = {k: spent.get(k, 0) + held.get(k, 0) for k in known}
+        left_out = sum(spent.get(k, 0) + held.get(k, 0) for k in NEW_MATERIALS if k not in known)
+        if left_out:
+            report["warnings"].append(text.HSDR_WARN_STAR_CUBES.format(n=left_out))
     elif base.get("resources"):
         resources = dict(base["resources"])
         report["warnings"].append(text.HSDR_WARN_NO_SPENT_BASE)
     else:
-        resources = {k: held.get(k, 0) for k in MATERIALS}
+        resources = {k: held.get(k, 0) for k in known}
         report["warnings"].append(text.HSDR_WARN_NO_SPENT)
     report["spent"], report["held"], report["resources"] = spent, held, resources
 
@@ -319,10 +362,24 @@ def build(
         obj["preset"] = base["preset"]
     if base.get("defaults"):
         obj["defaults"] = base["defaults"]
+    else:
+        # Without your HoshiDori inventory, cards newer than this app aren't in the file, and HoshiDori
+        # fills those in from its defaults (often owned). Only the "default bloom" fields are written,
+        # set to not owned (-1); your other defaults (oshi, ranks, ...) aren't touched.
+        obj["defaults"] = {"threeStarBloom": -1, "fourStarBloom": -1, "fiveStarBloom": -1}
     obj["cards"] = out_cards
     obj["characterRanks"] = out_ranks
     obj["resources"] = resources
     return obj, report
+
+
+def read_base(path: str | Path) -> dict:
+    """Read a HoshiDori settings export. Newer HoshiDori versions (settings version 5) wrap the
+    inventory in an "inventory" section next to other settings; older ones are the inventory itself."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if isinstance(data, dict) and isinstance(data.get("inventory"), dict):
+        return data["inventory"]
+    return data
 
 
 def write(obj: dict, out_dir: str | Path, user_id: str) -> Path:
@@ -372,24 +429,31 @@ def export_from(
     uid = public_user_id(ud)
     base = None
     if base_path:
-        base = json.loads(Path(base_path).read_text(encoding="utf-8"))
+        base = read_base(base_path)
 
     boards = user_boards(ud)
     spent, unknown_nodes = spent_on_boards(boards)
     cards = user_cards(ud)
-    newer = sorted(c for c in cards if c not in gamedata.CARD_IDS_SET)
     obj, report = build(cards, ranks, all_card_ids=list(gamedata.CARD_IDS), spent=spent, held=held_materials(ud), base=base)
     if unknown_nodes:
         report["warnings"].insert(0, text.HSDR_WARN_UNKNOWN_NODES.format(n=len(unknown_nodes)))
-    if newer and not base:
-        report["warnings"].append(text.HSDR_WARN_NEWER_CARDS.format(n=len(newer)))
     report["unknownNodes"] = unknown_nodes
-    dest = write(obj, out_dir, uid)
+    # HoshiDori's current file layout: the inventory in an "inventory" section, with settings that
+    # live outside it (the memory bonus) next to it, the same as HoshiDori's own exports.
+    memories = memory_count(ud)
+    report["memories"] = memories
+    report["memoryBonus"] = memory_bonus_pct(memories)
+    dest = write({"version": 5, "inventory": obj, "memoryBonusPercentage": report["memoryBonus"]}, out_dir, uid)
     report["dest"] = str(dest)
     report["ranks"] = len(ranks)
 
     # Holoboards: separate file for hsdr's Holoboard page (imported as a new profile)
-    builds = user_board_builds(ud, (base or {}).get("cards"))
+    include_new = hsdr_supports_new(base)
+    builds = user_board_builds(ud, (base or {}).get("cards"), include_new)
+    if not include_new:
+        held_new = sum(1 for nodes in boards.values() for n in nodes if n in NEW_NODES)
+        if held_new:
+            report["warnings"].append(text.HSDR_WARN_NEW_NODES.format(n=held_new))
     if builds:
         from datetime import date
 

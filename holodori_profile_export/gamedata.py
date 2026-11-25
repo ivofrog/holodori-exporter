@@ -1,11 +1,12 @@
 """Game data built into the exporter, so it doesn't need holodori.best while it runs.
 
-Snapshot of hololive Dreams v1.2.101, taken from the public data on https://holodori.best (v5.8.0).
+Snapshot of hololive Dreams v1.3.0, taken from the
+public data on https://holodori.best.
 Every holomem's holoboard uses the same node costs, so one table covers all of them, including
 holomems added later as long as their boards reuse these node IDs.
 """
 
-# node ID -> cubes/hexas it costs to unlock ("-1" = cubes, "-2" = hexas). S-nodes (connect slots) are free.
+# node ID -> cubes/hexas it costs to unlock ("-1" = cubes, "-2" = hexas, "-3" = star cubes). S-nodes (connect slots) are free.
 NODE_COSTS: dict[str, dict[str, int]] = {
     "S-001": {}, "S-002": {}, "S-003": {}, "S-004": {},
     "B-001": {"item-skill_tree_card-1": 20},
@@ -64,6 +65,7 @@ NODE_COSTS: dict[str, dict[str, int]] = {
     "G-023": {"item-skill_tree_allmember-1": 160},
     "G-024": {"item-skill_tree_allmember-1": 160},
     "G-025": {"item-skill_tree_allmember-1": 160},
+    "G-026": {"item-skill_tree_allmember-1": 160},
     "R-001": {"item-skill_tree_leader-1": 20},
     "R-002": {"item-skill_tree_leader-1": 25, "item-skill_tree_leader-2": 5},
     "R-003": {"item-skill_tree_leader-1": 20},
@@ -127,6 +129,7 @@ NODE_COSTS: dict[str, dict[str, int]] = {
     "R-061": {"item-skill_tree_leader-1": 200},
     "R-062": {"item-skill_tree_leader-1": 100, "item-skill_tree_leader-2": 25},
     "R-063": {"item-skill_tree_leader-1": 100, "item-skill_tree_leader-2": 25},
+    "R-064": {"item-skill_tree_leader-3": 10, "item-skill_tree_leader-2": 100},  # leader-3 = Red Star Cube
     "Y-001": {"item-skill_tree_content-1": 20},
     "Y-002": {"item-skill_tree_content-1": 20},
     "Y-003": {"item-skill_tree_content-1": 20},
@@ -163,6 +166,13 @@ NODE_COSTS: dict[str, dict[str, int]] = {
 # Total card EXP ("lesson points") needed to reach each level, from level 1. Same for every rarity.
 # Index 0 = level 1. Source: the "Lesson Point Per Level" table posted on holodori.best's forums;
 # it matches the game's own values at levels 60/70/80.
+# Memory bonus: number of memories (posters) collected -> bonus in permil (tenths of a percent).
+# +0.2% per memory up to 30, then +0.1% each (8.0% at 50). The game's table stops at 50; past that the
+# exporter assumes it keeps going at +0.1% per memory (see hoshidori.memory_bonus_pct).
+MEMORY_EFFECTS: tuple[tuple[int, int], ...] = tuple(
+    (n, 2 * n if n <= 30 else 60 + (n - 30)) for n in range(1, 51)
+)
+
 LEVEL_EXP: tuple[int, ...] = (
     0, 40, 100, 190, 310, 460, 650, 880, 1160, 1500,
     1900, 2400, 3000, 3700, 4550, 5500, 6700, 8050, 9600, 11400,
@@ -229,5 +239,7 @@ CARD_IDS: tuple[str, ...] = (
     "card-04017-4-cmmn-0000-00", "card-06002-3-nrml-0058-00", "card-06002-4-cmmn-0000-00", "card-06003-3-nrml-0059-00",
     "card-06003-4-cmmn-0000-00", "card-06004-3-nrml-0060-00", "card-06004-4-cmmn-0000-00", "card-06005-3-nrml-0061-00",
     "card-06005-4-cmmn-0000-00",
+    # v1.3.0 (November 2026)
+    "card-00015-5-uniq-0120-00", "card-00028-5-uniq-0121-00", "card-04003-5-uniq-0122-00", "card-04013-5-uniq-0123-00",
 )
 CARD_IDS_SET = frozenset(CARD_IDS)

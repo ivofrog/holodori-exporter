@@ -178,8 +178,8 @@ class App(ctk.CTk):
             pass
         _pick_fonts()
         self.title(text.GUI_TITLE)
-        self.geometry("1000x720")  # open at the minimum; _fit_window grows it only if the content needs more
-        self.minsize(1000, 720)
+        self.geometry("1120x720")  # open at the minimum; _fit_window grows it only if the content needs more
+        self.minsize(1120, 720)
         self._set_icon()
         self.after(250, self._set_icon)
         self.after(50, lambda: _blend_titlebar(self, C.BG, C.TEXT))
@@ -325,7 +325,7 @@ class App(ctk.CTk):
     def _card(self, parent, **kw):
         return ctk.CTkFrame(parent, corner_radius=18, fg_color=C.PANEL, border_width=1, border_color=C.EDGE, **kw)
 
-    _BASE_MIN = (1000, 720)
+    _BASE_MIN = (1120, 720)
 
     def _fit_window(self) -> None:
         """Never let the window be smaller than its content needs, so nothing gets cut off.
@@ -437,10 +437,12 @@ class App(ctk.CTk):
         ctk.CTkLabel(box, text=icon, font=F(13, "bold"), text_color=tx, width=18).pack(
             side="left", anchor="n", padx=(14, 0), pady=12
         )
-        ctk.CTkLabel(
+        msg = ctk.CTkLabel(
             box, text=message, font=F(12), text_color=C.TEXT if kind == "info" else tx,
             justify="left", anchor="w", wraplength=580,
-        ).pack(side="left", fill="x", expand=True, padx=(8, 14), pady=12)
+        )
+        msg.pack(side="left", fill="x", expand=True, padx=(8, 14), pady=12)
+        self._autowrap(msg, 64)  # box width minus the icon and padding
         return box
 
     # ------------------------------------------------------------ step 1: method + options
@@ -628,15 +630,17 @@ class App(ctk.CTk):
 
         base_row = ctk.CTkFrame(hs, fg_color="transparent")
         base_row.pack(fill="x", padx=14, pady=(0, 12))
-        self._base_label = ctk.CTkLabel(base_row, text="", font=F(11), text_color=C.MUTED, anchor="w",
-                                        justify="left", wraplength=170)
-        self._base_label.pack(side="left", fill="x", expand=True)
         self._base_btn = ctk.CTkButton(
-            base_row, text=text.UI_HSDR_BASE_BTN, command=self._pick_base, width=170, height=30, corner_radius=10,
+            base_row, text=text.UI_HSDR_BASE_BTN, command=self._pick_base, width=190, height=30, corner_radius=10,
             font=F(12), fg_color=C.CONTROL, hover_color=C.ACCENT_SOFT, text_color=C.TEXT,
             border_width=1, border_color=C.LINE,
         )
-        self._base_btn.pack(side="right")
+        # Button first, with a gap, so the text gets the rest of the row and never runs into it
+        self._base_btn.pack(side="right", padx=(16, 0))
+        self._base_label = ctk.CTkLabel(base_row, text="", font=F(11), text_color=C.MUTED, anchor="w",
+                                        justify="left", wraplength=170)
+        self._base_label.pack(side="left", fill="x", expand=True)
+        self._autowrap(self._base_label, 190 + 16 + 4)  # row width minus the button and the gap
         self._target_err = ctk.CTkLabel(parent, text="", font=F(12), text_color=C.ERR, anchor="w")
         self._target_err.pack(fill="x", pady=(4, 0))
         self._paint_targets()
@@ -729,6 +733,7 @@ class App(ctk.CTk):
         path_lbl = ctk.CTkLabel(row, text="", font=F(12), text_color=C.TEXT, anchor="w", justify="left", wraplength=480)
         path_lbl.pack(side="left", fill="x", expand=True)
         self._ghost(row, text.UI_STEAM_FOLDER_BTN, self._pick_steam_dir, width=110).pack(side="right", padx=(12, 0))
+        self._autowrap(path_lbl, 110 + 12 + 4)
         hint = ctk.CTkLabel(parent, text="", font=F(11), anchor="w", justify="left", wraplength=560)
         hint.pack(fill="x", pady=(4, 10))
         self._autowrap(hint, 8)
@@ -768,9 +773,9 @@ class App(ctk.CTk):
             r = ctk.CTkFrame(box, fg_color="transparent")
             r.pack(fill="x", padx=16, pady=(12 if i == 0 else 4, 12 if i == len(rows) - 1 else 0))
             ctk.CTkLabel(r, text=k, font=F(12), text_color=C.MUTED, width=90, anchor="w").pack(side="left")
-            ctk.CTkLabel(r, text=v, font=F(12), text_color=C.TEXT, anchor="w", justify="left", wraplength=420).pack(
-                side="left", fill="x", expand=True
-            )
+            val = ctk.CTkLabel(r, text=v, font=F(12), text_color=C.TEXT, anchor="w", justify="left", wraplength=420)
+            val.pack(side="left", fill="x", expand=True)
+            self._autowrap(val, 90 + 4)
 
     # ------------------------------------------------------------ step 3: run
 
@@ -859,10 +864,13 @@ class App(ctk.CTk):
         txt = ctk.CTkFrame(card, fg_color="transparent")
         txt.pack(side="left", fill="x", expand=True, pady=12, padx=(0, 14))
         ctk.CTkLabel(txt, text=name, font=F(14, "bold"), text_color=C.TEXT, anchor="w").pack(fill="x")
-        ctk.CTkLabel(txt, text=where, font=F(11), text_color=C.FAINT, anchor="w", justify="left", wraplength=560).pack(fill="x")
-        ctk.CTkLabel(txt, text=hint, font=F(12), text_color=C.MUTED, anchor="w", justify="left", wraplength=560).pack(
-            fill="x", pady=(6, 0)
-        )
+        where_lbl = ctk.CTkLabel(txt, text=where, font=F(11), text_color=C.FAINT, anchor="w", justify="left", wraplength=560)
+        where_lbl.pack(fill="x")
+        hint_lbl = ctk.CTkLabel(txt, text=hint, font=F(12), text_color=C.MUTED, anchor="w", justify="left", wraplength=560)
+        hint_lbl.pack(fill="x", pady=(6, 0))
+        # Wrap to the card's real width instead of a fixed one, so the text uses the space it has
+        self._autowrap(where_lbl, 8)
+        self._autowrap(hint_lbl, 8)
 
     def _show_done(self, info: dict) -> None:
         body, footer = self._screen(2, text.UI_DONE_TITLE, text.UI_DONE_SUB, done_upto=3)
