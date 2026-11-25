@@ -63,6 +63,7 @@ HSDR_SUPPORTS_STAR_CUBES = True
 NEW_MATERIALS = [
     "item-skill_tree_leader-3",  # Red Star Cube
 ]
+PASSTHROUGH_SETTINGS = ("growthBoostPercentage",)  # HoshiDori's upgrade bonus
 NEW_NODES = frozenset({"G-026", "R-064"})  # R-064 = the Red Star Cube node at the top of the board
 
 BLANK_DEFAULTS = {
@@ -362,11 +363,9 @@ def build(
         obj["preset"] = base["preset"]
     if base.get("defaults"):
         obj["defaults"] = base["defaults"]
-    else:
-        # Without your HoshiDori inventory, cards newer than this app aren't in the file, and HoshiDori
-        # fills those in from its defaults (often owned). Only the "default bloom" fields are written,
-        # set to not owned (-1); your other defaults (oshi, ranks, ...) aren't touched.
-        obj["defaults"] = {"threeStarBloom": -1, "fourStarBloom": -1, "fiveStarBloom": -1}
+    # Without your HoshiDori inventory, no defaults are written at all: HoshiDori fills any field a
+    # file's "defaults" leaves out with its built-in values, so writing only some of them would reset
+    # the rest (oshi, ranks, materials).
     obj["cards"] = out_cards
     obj["characterRanks"] = out_ranks
     obj["resources"] = resources
@@ -443,7 +442,18 @@ def export_from(
     memories = memory_count(ud)
     report["memories"] = memories
     report["memoryBonus"] = memory_bonus_pct(memories)
-    dest = write({"version": 5, "inventory": obj, "memoryBonusPercentage": report["memoryBonus"]}, out_dir, uid)
+    out = {"version": 5, "inventory": obj, "memoryBonusPercentage": report["memoryBonus"]}
+    # Settings HoshiDori keeps next to the inventory that the game doesn't have: copied unchanged from
+    # your imported HoshiDori inventory once HoshiDori includes them in its exports (not yet, as of v1.33.1).
+    if base_path:
+        try:
+            raw = json.loads(Path(base_path).read_text(encoding="utf-8"))
+        except Exception:
+            raw = {}
+        for key in PASSTHROUGH_SETTINGS:
+            if isinstance(raw, dict) and isinstance(raw.get(key), (int, float)) and not isinstance(raw.get(key), bool):
+                out[key] = raw[key]
+    dest = write(out, out_dir, uid)
     report["dest"] = str(dest)
     report["ranks"] = len(ranks)
 
