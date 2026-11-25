@@ -5,7 +5,7 @@ Export your **hololive Dreams** game account into a portable **`.hdbest` profile
 This is a fork of [HolodoriDB/holodori-profile-export](https://github.com/HolodoriDB/holodori-profile-export)
 that adds the HoshiDori export and a redesigned app.
 
-> Last updated: v1.2.101 hololive Dreams · v5.8.0 holodori.best · v1.32.5 HoshiDori
+> Last updated: v1.3.0 hololive Dreams · v5.9.0 holodori.best · v1.33.1 HoshiDori
 
 The profile file is an unencrypted gzipped json file.
 
@@ -34,7 +34,7 @@ In the window app, use the **Export for** switches (holodori.best and HoshiDori,
 
 ```bash
 python main.py --source steam --hoshidori
-python main.py --source steam --hoshidori --hoshidori-base my-hoshidori-export.json   # keep your HoshiDori settings
+python main.py --source steam --hoshidori --hoshidori-base my-hoshidori-export.json   # keep your custom cards and presets
 python main.py --source steam --hoshidori --no-hdbest                                 # only the HoshiDori file
 ```
 
@@ -43,14 +43,15 @@ python main.py --source steam --hoshidori --no-hdbest                           
 | cards (owned, bloom, level) | your game account. Level is worked out exactly from card EXP (the game's EXP-per-level table is built in) and capped by limit breaks. |
 | characterRanks | the game's own profile data (`Profile/GetUserProfileDetail`). |
 | resources (cubes & hexas) | what your boards have spent (node costs built into the exporter) **plus** what you hold in the game right now. |
+| memoryBonusPercentage | worked out from the memories (posters) you have collected. |
 | holoboards | a second file, `<user id>.hoshidori-holoboards.json`, for HoshiDori → Holoboard → profile menu (⋯) → **Import JSON**. HoshiDori adds it as a new Holoboard profile; existing ones are never overwritten. |
-| preset / defaults | copied from `--hoshidori-base` if given; otherwise left out, so HoshiDori keeps the selected profile's own (its Import JSON only replaces sections the file contains). |
+| preset / defaults | copied from `--hoshidori-base` if given. Otherwise only the default blooms are written, as not owned, so cards newer than the exporter show as not owned; your other HoshiDori defaults (oshi, ranks, …) are kept. |
 | custom cards | kept exactly (owned, bloom, level) from `--hoshidori-base`. Without a base file, HoshiDori still keeps them, but resets them to its preset defaults (e.g. owned, B1, max level). |
 
 HoshiDori's Import JSON rejects a whole file if it names a card or holomem it doesn't know. So:
 
 - With `--hoshidori-base`, cards and holomems that aren't in that file (new ones HoshiDori hasn't added yet) are left out and listed as a warning.
-- If you delete a custom card in HoshiDori after exporting your settings, export them again before running this; otherwise HoshiDori won't import the file.
+- If you delete a custom card in HoshiDori after exporting your inventory, export it again before running this; otherwise HoshiDori won't import the file.
 
 Your login is only ever sent to the game servers. The card list
 and holoboard node costs are built into the exporter (`gamedata.py`), so it makes no other requests.
@@ -120,7 +121,7 @@ mitmdump -s holodori_profile_export/sources/mitm.py --set hdbest_out=.
 Route the game client through mitmproxy (trust its CA), then launch/relaunch the game (load into the game past the title screen!). When the home
 screen loads, the script decodes the snapshot and writes the `.hdbest`.
 
-To also make the HoshiDori files, add `--set hoshidori=true` (and `--set hoshidori_base=<file>` to build on your current HoshiDori settings and keep custom cards; `--set no_hdbest=true` skips the `.hdbest`):
+To also make the HoshiDori files, add `--set hoshidori=true` (and `--set hoshidori_base=<file>` to build on your current HoshiDori inventory and keep custom cards; `--set no_hdbest=true` skips the `.hdbest`):
 
 ```
 mitmdump -s holodori_profile_export/sources/mitm.py --set hdbest_out=. --set hoshidori=true
@@ -136,6 +137,13 @@ Basic knowledge on how to intercept network requests (or use a proxy) is require
 *Easy for non-Android devices. Requires a rooted Android device if used on Android.
 
 ## Changelog
+
+### 1.2.0
+- Made minor visual tweaks/adjustments.
+- Added the two new holoboard nodes (including the new top Leader node) and the new Red Star Cubes to the HoshiDori export.
+- The HoshiDori inventory file now includes your memory bonus, worked out from the memories (posters) you have collected. It uses HoshiDori's current file layout.
+- **Fixed:** cards newer than the exporter no longer show as owned in HoshiDori.
+- **Fixed:** importing your current HoshiDori inventory works with HoshiDori's newer export files (custom cards, preset and defaults were being left out).
 
 ### 1.1.2
 - **Steam on Linux and macOS:** the game's sign-in is now found automatically on Linux (Steam / Proton, including
